@@ -1,35 +1,22 @@
 #Step 1 is to import an annotated counts file:
-install.packages(c("readr", "stringr", "reshape2","ggpubr"))
+#install.packages(c("readr", "stringr", "reshape2","ggpubr", "olsrr"))
 library(readr)
 library(stringr)
 library(reshape2)
 library(ggpubr)
+library(olsrr)
 mypath="C:/Users/Sara/Documents/HHMI_projects/Meghan_Garrett/2018_10_05"
 counts=read.table("C:/Users/Sara/Documents/HHMI_projects/Meghan_Garrett/2018_10_05/2018.10.05.annotatedCounts.txt", header=T, stringsAsFactors = F)
 
 #First, check that there is good correlation between replicates if two replicates exist.
 #need to determine which reps are which; this is contained in the column names
 #Multiple formats exist for column names, some don't include all parts
-# [1] "id"                   "Virus_Protein_Loc_AA" "Oligo"                "X006.10ng.1"          "X006.10ng.2"         
-# [6] "X016.10ng.1"          "X016.10ng.2"          "X067.10ng.1"          "X067.10ng.2"          "X072.10ng.1"         
-# [11] "X072.10ng.2"          "X14639.10ug.1"        "X14639.10ug.2"        "X14639.20ug.1"        "X14639.20ug.2"       
-#....         
-# [51] "X6F5.10ng.2"          "X7B6.10ng.1"          "X7B6.10ng.2"          "X8B10.10ng.1"         "X8B10.10ng.2"        
-# [56] "X8F6.10ng.1"          "X8F6.10ng.2"          "X9577.10ug.1"         "X9577.10ug.2"         "X9577.20ug.1"        
-# [61] "X9577.20ug.2"         "X9577.2ug.1"          "X9577.2ug.2"          "beads.only.1"         "beads.only.2"        
-#... 
-# [71] "Fi6v3.10ng.2"         "HIVIG.10ng.1"         "HIVIG.10ng.2"         "input.1"              "input.2"             
-#...        
-# [86] "QA255.2ug.1"          "QA255.2ug.2"          "vFP1602.10ng.1"       "vFP1602.10ng.2"       "vFP2001.10ng.1"      
-# [91] "vFP2001.10ng.2"       "VRC034.10ng.1"        "VRC034.10ng.2"                    
 
 #pull out relevant parts of names here
-sepnames=str_split_fixed(colnames(counts), fixed("."), 3)
-colnames(sepnames)=c("Antibody", "Quantity", "rep")
-#going to trim this down to include only rep1, and samples with 10ng of input for the moment. 
-#Later will do some quality control and decide where to average or drop relicates
-rep1=which(sepnames[,3]%in%c("1"))
-rep2=which(sepnames[,3]%in%c("2"))
+sepnames=str_split_fixed(colnames(counts), fixed("."), 2)
+colnames(sepnames)=c("Antibody", "rep")
+rep1=which(sepnames[,2]%in%c("1"))
+rep2=which(sepnames[,2]%in%c("2"))
 replicate=rep(NA, length(colnames(counts)))
 replicate[rep1]=1
 replicate[rep2]=2
@@ -46,11 +33,14 @@ for (i in 1:length(rep1)){
             cor.coef = TRUE, cor.method = "pearson",
             xlab = myxtitle, ylab = myytitle))
   correlations[i]=cor(counts[,myxtitle], counts[,myytitle])
+  
+  model <- lm(myxtitle ~ myytitle, data = counts)
+  ols_plotcooksd_bar(model)
 }
 
 #Do the same for input! Not included in forloop as name structure differs.
-myxtitle="input.1"
-myytitle="input.2"
+myxtitle="Input.Lib1"
+myytitle="Input.Lib2"
 print(ggscatter(counts, x = myxtitle, y = myytitle, 
                 add = "reg.line", conf.int = TRUE, 
                 cor.coef = TRUE, cor.method = "pearson",
@@ -74,22 +64,22 @@ dev.off() #this command stops writing to PDF
 #Generate correlation plots for replicates--all in one PDF
 correlations2=rep(NA, length(rep1))
 names(correlations2)=sepnames[rep1,1]
-pdf(file = "C:/Users/Sara/Documents/HHMI_projects/Meghan_Garrett/2018_10_5/corrplots2_10_05.pdf", title="Replicate correlation plots no outlier")
+pdf(file = "C:/Users/Sara/Documents/HHMI_projects/Meghan_Garrett/2018_10_05/corrplots_no_outlier_10_05.pdf", title="Replicate correlation plots no outlier")
 for (i in 1:length(rep1)){
   myxtitle=colnames(counts)[rep1[i]]
-  myx=counts$myxtitle[-which(counts$myxtitle=max(counts$myxtitle))]
-  myy=counts$myytitle[-which(counts$myxtitle=max(counts$myxtitle))]
   myytitle=colnames(counts)[rep2[i]]
-  print(ggscatter(x = myx, y = myy, 
+  temp_counts=counts[-which(counts[,myxtitle]==max(counts[,myxtitle])),]
+  print(ggscatter(temp_counts, x = myxtitle, y = myytitle, 
                   add = "reg.line", conf.int = TRUE, 
                   cor.coef = TRUE, cor.method = "pearson",
                   xlab = myxtitle, ylab = myytitle))
+  
   correlations2[i]=cor(counts[,myxtitle], counts[,myytitle])
 }
 
 #Do the same for input! Not included in forloop as name structure differs.
-myxtitle="input.1"
-myytitle="input.2"
+myxtitle="Input.Lib1"
+myytitle="Input.Lib2"
 print(ggscatter(counts, x = myxtitle, y = myytitle, 
                 add = "reg.line", conf.int = TRUE, 
                 cor.coef = TRUE, cor.method = "pearson",
@@ -112,9 +102,9 @@ samples_to_drop=c(colnames(counts)[rep1[which(correlations<0.8)]],colnames(count
 
 #Don't actually want to drop both bead counts--we know which of these didn't work. Need to keep beads.only.2.
 
-samples_to_drop=samples_to_drop[-which(samples_to_drop=="beads.only.2")]
-
-counts[,samples_to_drop]=NULL
+#samples_to_drop=samples_to_drop[-which(samples_to_drop=="beads.only.2")]
+#
+#counts[,samples_to_drop]=NULL
 
 #I'll use this in the next file, "search for epitopes"
 write.csv(counts, file="C:/Users/Sara/Documents/HHMI_projects/Meghan_Garrett/2018_10_05/only_clean_replicates.csv")
@@ -136,28 +126,22 @@ col_sums=apply((counts[,-c(1:3)]),2, sum)
 temp_counts=cbind(counts[,1:3],(sweep((counts[,-c(1:3)]), 2, col_sums, "/")))
 
 
-
-
-#average the two input replicates (they correlate almost perfectly)
-temp_counts$meaninput=apply(cbind(temp_counts$input.1,temp_counts$input.2),1, mean)
-
-
 #some oligos had 0 input reads detected. To avoid dividing by zero, I'll set these equal to the mean of the input for all of the oligos
 #How many had 0?
-length(which(temp_counts$meaninput==0))
 
-temp_counts$meaninput[which(temp_counts$meaninput==0)]=mean(temp_counts$meaninput)
-
-write.csv(temp_counts,"C:/Users/Sara/Documents/HHMI_projects/Meghan_Garrett/2018.10.05.proportions.csv")
+temp_counts$Input.Lib1[which(temp_counts$Input.Lib1==0)]=mean(temp_counts$Input.Lib1)
+temp_counts$mean_beads=apply(cbind(temp_counts$Beadsonly.Lib1.1 ,temp_counts$Beadsonly.Lib1.2),1, mean)
+write.csv(temp_counts,"C:/Users/Sara/Documents/HHMI_projects/Meghan_Garrett/2018_10_05/proportions.csv")
 
 #divided the normalized output by the normalized input counts
-temp_counts2=cbind(counts[,1:3],(sweep(temp_counts[,-c(1:3)], 1, temp_counts$meaninput, "/")))
+temp_counts2=cbind(counts[,1:3],(sweep(temp_counts[,-c(1:3)], 1, temp_counts$Input.Lib1, "/")))
 
 #now subtract the beads only controls
 #counts$beads.only.1=NULL #this beads attempt failed
 #leaving for now to not mess up our indices
 
-standardized_enrichment=cbind(counts[,1:3],(sweep(temp_counts2[,-c(1:3)], 1, (temp_counts2$beads.only.2), FUN = "-", check.margin = TRUE)))
+temp_counts2$mean_beads=apply(cbind(temp_counts2$Beadsonly.Lib1.1 ,temp_counts$Beadsonly.Lib1.2),1, mean)
+standardized_enrichment=cbind(counts[,1:3],(sweep(temp_counts2[,-c(1:3)], 1, (temp_counts2$mean_beads), FUN = "-", check.margin = TRUE)))
 
 
 #Save this file:
@@ -173,13 +157,6 @@ rm(temp_counts,temp_counts2,col_sums, myxtitle, myytitle,i, samples_to_drop)
 #However, some oligomers are commnon between two strains
 
 
-#pretty sure I don't use these, will delete later
-#tenng=which(sepnames[,2]%in%c("", "only", "1", "2", "10ng"))
-#shortcolname=paste(sepnames[,1], sepnames[,2],sep=".")
-#counts=rbind(counts, shortcolname)
-#sepnames[which(sepnames[,2]==""),2]="ng"
-#sepnames[which(sepnames[,3]==""),3]="rep"
-#ng=rep(NA, length(colnames(counts))
 
 #find the oligomers common to two strains
 #if there are two strains the names are separated by "."
@@ -236,10 +213,13 @@ table(seplocus[,"Virus"], seplocus[,"Protein"])
 
 vir=unique(seplocus[,"Virus"])
 prot=unique(seplocus[,"Protein"])
-counts_no_doubles$input.1=NULL
-counts_no_doubles$input.2=NULL
-counts_no_doubles$meaninput=NULL
-counts_no_doubles$beads.only.2=NULL
+# counts_no_doubles$Input.Lib1=NULL
+# counts_no_doubles$Input.Lib2a=NULL
+# counts_no_doubles$Input.Lib2b=NULL
+# counts_no_doubles$Input.Lib2=NULL
+# counts_no_doubles$mean_beads=NULL
+# counts_no_doubles$Beadsonly.Lib1.1=NULL
+
 
 samples=colnames(counts_no_doubles[-c(1:3,66:69)])
 
@@ -268,7 +248,7 @@ for (i in 1:length(vir)){
     wtfilepath=paste(mypath,wtfilename,sep="/")
     write.csv(wtseqfile, wtfilepath)
     #for (m in 1:length(samples)){
-      ycolumn=samples[m]
+    #  ycolumn=samples[m]
 # 
 #     print(ggline(wtseqfile, x="Locus", y = ycolumn,
 #                     add = NULL, conf.int = FALSE,
